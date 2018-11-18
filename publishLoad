@@ -1,0 +1,59 @@
+package ctl
+//import ctl.rawConsumer
+//import org.apache.log4j.{Level, LogManager}
+import ctl.rawConsumer._
+import org.apache.hadoop.conf.Configuration
+import org.apache.spark.sql.DataFrame
+import org.apache.hadoop.hbase.client.Put
+import org.apache.hadoop.hbase.spark.HBaseContext
+//import org.apache.hadoop.hbase.spark.HBaseRDDFunctions._
+import org.apache.hadoop.hbase.util.Bytes
+import org.apache.hadoop.hbase.{HBaseConfiguration, TableName}
+//import org.apache.spark.sql.functions._
+
+object publishLoad {
+
+  //Write into HBase Flight_Leg table
+  //    println("===============================================================")
+  //    println("Inserting Flight Leg details into SVOC_CTL_FLIGHT HBase table")
+  //    println("===============================================================")
+  //    svoc_Curated.selectExpr("operatingcarriercode"
+  //      ,"flightnum"
+  //      ,"originairportcode"
+  //     ,"destinationairportcode"
+  //      ,"flightdeparturedate"
+  //      ,"gategroupingname"
+  //      ,"gateid"
+  //      ,"scheduleddeparturelocalts"
+  //      ,"scheduleddepartureutcts"
+  //      ,"recognitiontypecd as flightlegarrivaldeparturestatus"
+  //      ,"estimatedarrivallocalts"
+  //      ,"estimatedarrivalutcts"
+  //      ,"estimateddeparturelocalts"
+  //      ,"estimateddepartureutcts"
+  //      ,"impactedcustomercnt"
+  //      ,"receivedts").write.options(Map(HBaseTableCatalog.tableCatalog -> fltLegDetails, HBaseTableCatalog.newTable -> "5")).format("org.apache.spark.sql.execution.datasources.hbase").save()
+
+  def putFunc(put: Put, cf: String, colName: String, tsValue: String, colValue: String): Unit = {
+    put.addColumn(Bytes.toBytes(cf), Bytes.toBytes(colName), tsValue.toLong, Bytes.toBytes(colValue))
+  }
+
+  def insertRecords(fltLegDF: DataFrame, tableName: String, columnFamily: String, schemaFields: String, rkIndex: Int, timeStpIndex: Int): Unit = {
+
+    val finRDD = fltLegDF.rdd.map(_.mkString(";,;"))
+    val conf: Configuration = HBaseConfiguration.create()
+    val hbaseContext: HBaseContext = new HBaseContext(sc, conf)
+    val colNames = schemaFields.split(",")
+    hbaseContext.bulkPut[String](finRDD,
+      TableName.valueOf(tableName),
+      (putRecord) => {
+        var colIndex = 0
+        var put = new Put(Bytes.toBytes(putRecord.split(";,;")(rkIndex)))
+        for (colName <- colNames) {
+          putFunc(put, columnFamily, colName, putRecord.split(";,;")(timeStpIndex), putRecord.split(";,;")(colIndex))
+          colIndex = colIndex + 1
+        }
+        put
+      })
+  }
+}
